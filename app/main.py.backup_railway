@@ -80,14 +80,19 @@ if "PDF generator is not available on this deployment" not in text:
     db: Session = Depends(get_db),
 ):
     try:
-                from reportlab.platypus import (
+        from reportlab.lib.pagesizes import A4
+        from reportlab.platypus import (
             SimpleDocTemplate,
             Paragraph,
             Spacer,
             Table,
             TableStyle,
         )
-                                    except Exception as e:
+        from reportlab.lib.styles import getSampleStyleSheet
+        from reportlab.lib import colors
+        from reportlab.platypus import Image as RLImage
+        from reportlab.lib.units import inch
+    except Exception as e:
         raise HTTPException(
             status_code=503,
             detail=f"PDF generator is not available on this deployment: {str(e)}",
@@ -106,14 +111,19 @@ if "PDF generator is not available on this deployment" not in text:
         m = pattern.search(text)
         if m:
             imports_block = """    try:
-                from reportlab.platypus import (
+        from reportlab.lib.pagesizes import A4
+        from reportlab.platypus import (
             SimpleDocTemplate,
             Paragraph,
             Spacer,
             Table,
             TableStyle,
         )
-                                    except Exception as e:
+        from reportlab.lib.styles import getSampleStyleSheet
+        from reportlab.lib import colors
+        from reportlab.platypus import Image as RLImage
+        from reportlab.lib.units import inch
+    except Exception as e:
         raise HTTPException(
             status_code=503,
             detail=f"PDF generator is not available on this deployment: {str(e)}",
@@ -127,7 +137,8 @@ if "HTML PDF generator is not available on this deployment" not in text:
     replace_once(
         "    with sync_playwright() as p:\n",
         """    try:
-            except Exception as e:
+        from playwright.sync_api import sync_playwright
+    except Exception as e:
         raise HTTPException(
             status_code=503,
             detail=f"HTML PDF generator is not available on this deployment: {str(e)}",
@@ -139,17 +150,17 @@ if "HTML PDF generator is not available on this deployment" not in text:
     )
 
 replace_all(
-    '/{route}/{escape(filename)}',
+    'http://127.0.0.1:8000/{route}/{escape(filename)}',
     '/{route}/{escape(filename)}',
     "fixed report image URLs",
 )
 replace_all(
-    'src="/uploads/{original_filename}"',
+    'src="http://127.0.0.1:8000/uploads/{original_filename}"',
     'src="/uploads/{original_filename}"',
     "fixed original scan report URL",
 )
 replace_all(
-    'src="/heatmaps/{heatmap_filename}"',
+    'src="http://127.0.0.1:8000/heatmaps/{heatmap_filename}"',
     'src="/heatmaps/{heatmap_filename}"',
     "fixed heatmap report URL",
 )
