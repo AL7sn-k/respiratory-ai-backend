@@ -17,7 +17,8 @@ from app.services.fusion import fuse_predictions
 import shutil
 from pathlib import Path
 from fastapi import UploadFile, File, Form
-from app.services.image_prediction import predict_image
+
+# from app.services.image_prediction import predict_image
 from fastapi.responses import FileResponse
 from reportlab.lib.pagesizes import A4
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
@@ -1126,8 +1127,6 @@ def _build_next_steps(diagnosis, selected_symptoms):
     return "\n".join(steps)
 
 
-
-
 # ============================================================
 # Patient mobile app compatibility endpoints
 # Login uses Patient ID + registered email.
@@ -1202,17 +1201,23 @@ def _mobile_patient_from_auth(
     db: Session = Depends(get_db),
 ) -> Patient:
     if not authorization or not authorization.lower().startswith("bearer "):
-        raise HTTPException(status_code=401, detail="Patient session missing. Please login again.")
+        raise HTTPException(
+            status_code=401, detail="Patient session missing. Please login again."
+        )
 
     token = authorization.split(" ", 1)[1].strip()
 
     if not token.startswith("patient-"):
-        raise HTTPException(status_code=401, detail="Invalid patient session. Please login again.")
+        raise HTTPException(
+            status_code=401, detail="Invalid patient session. Please login again."
+        )
 
     try:
         patient_id = int(token.split("-", 1)[1])
     except Exception:
-        raise HTTPException(status_code=401, detail="Invalid patient session. Please login again.")
+        raise HTTPException(
+            status_code=401, detail="Invalid patient session. Please login again."
+        )
 
     patient = (
         db.query(Patient)
@@ -1221,7 +1226,9 @@ def _mobile_patient_from_auth(
     )
 
     if not patient:
-        raise HTTPException(status_code=401, detail="Patient account not found. Please login again.")
+        raise HTTPException(
+            status_code=401, detail="Patient account not found. Please login again."
+        )
 
     return patient
 
@@ -1232,10 +1239,26 @@ def _map_diagnosis_for_mobile(diagnosis: Diagnosis):
         "patient_id": diagnosis.patient_id,
         "doctor_id": diagnosis.doctor_id,
         "status": "Approved",
-        "xray_path": diagnosis.image_path if diagnosis.scan_type and "x" in diagnosis.scan_type.lower() else None,
-        "ct_path": diagnosis.image_path if diagnosis.scan_type and "ct" in diagnosis.scan_type.lower() else None,
-        "xray_heatmap_path": diagnosis.heatmap_path if diagnosis.scan_type and "x" in diagnosis.scan_type.lower() else None,
-        "ct_heatmap_path": diagnosis.heatmap_path if diagnosis.scan_type and "ct" in diagnosis.scan_type.lower() else None,
+        "xray_path": (
+            diagnosis.image_path
+            if diagnosis.scan_type and "x" in diagnosis.scan_type.lower()
+            else None
+        ),
+        "ct_path": (
+            diagnosis.image_path
+            if diagnosis.scan_type and "ct" in diagnosis.scan_type.lower()
+            else None
+        ),
+        "xray_heatmap_path": (
+            diagnosis.heatmap_path
+            if diagnosis.scan_type and "x" in diagnosis.scan_type.lower()
+            else None
+        ),
+        "ct_heatmap_path": (
+            diagnosis.heatmap_path
+            if diagnosis.scan_type and "ct" in diagnosis.scan_type.lower()
+            else None
+        ),
         "ai_diagnosis": diagnosis.final_prediction,
         "ai_confidence": (diagnosis.final_confidence or 0) / 100,
         "doctor_final_diagnosis": diagnosis.final_prediction,
@@ -1301,7 +1324,9 @@ def _mobile_symptom_names(symptoms: dict) -> list[str]:
     return [key.replace("_", " ").title() for key, value in symptoms.items() if value]
 
 
-def _mobile_assistant_assessment(symptoms: dict, temperature: float | None, oxygen: float | None):
+def _mobile_assistant_assessment(
+    symptoms: dict, temperature: float | None, oxygen: float | None
+):
     severity_points = 0
     red_flags = []
     risk_reasons = []
@@ -1314,12 +1339,16 @@ def _mobile_assistant_assessment(symptoms: dict, temperature: float | None, oxyg
     if symptoms.get("shortness_of_breath"):
         severity_points += 4
         red_flags.append("shortness of breath / low oxygen concern")
-        risk_reasons.append("Breathing difficulty or low oxygen concern is high-priority")
+        risk_reasons.append(
+            "Breathing difficulty or low oxygen concern is high-priority"
+        )
 
     if symptoms.get("chest_pain"):
         severity_points += 3
         red_flags.append("chest pain")
-        risk_reasons.append("Chest pain needs medical attention if persistent or severe")
+        risk_reasons.append(
+            "Chest pain needs medical attention if persistent or severe"
+        )
 
     if symptoms.get("blood_in_sputum"):
         severity_points += 8
@@ -1334,7 +1363,9 @@ def _mobile_assistant_assessment(symptoms: dict, temperature: float | None, oxyg
         elif oxygen < 92:
             severity_points += 6
             red_flags.append(f"low oxygen level ({oxygen}%)")
-            risk_reasons.append(f"Oxygen level {oxygen}% is below the safe monitoring threshold")
+            risk_reasons.append(
+                f"Oxygen level {oxygen}% is below the safe monitoring threshold"
+            )
         elif oxygen < 95:
             severity_points += 2
             risk_reasons.append(f"Oxygen level {oxygen}% should be monitored")
@@ -1352,7 +1383,11 @@ def _mobile_assistant_assessment(symptoms: dict, temperature: float | None, oxyg
         severity = "Critical"
     elif symptoms.get("shortness_of_breath") and symptoms.get("chest_pain"):
         severity = "Critical"
-    elif symptoms.get("shortness_of_breath") or symptoms.get("chest_pain") or (oxygen is not None and oxygen < 92):
+    elif (
+        symptoms.get("shortness_of_breath")
+        or symptoms.get("chest_pain")
+        or (oxygen is not None and oxygen < 92)
+    ):
         severity = "High"
     elif severity_points >= 5:
         severity = "High"
@@ -1361,7 +1396,11 @@ def _mobile_assistant_assessment(symptoms: dict, temperature: float | None, oxyg
     else:
         severity = "Low"
 
-    trend = "Worsening" if severity in ["High", "Critical"] else "Stable" if severity == "Medium" else "Improving"
+    trend = (
+        "Worsening"
+        if severity in ["High", "Critical"]
+        else "Stable" if severity == "Medium" else "Improving"
+    )
 
     if severity == "Critical":
         stage = "urgent_escalation"
@@ -1371,7 +1410,9 @@ def _mobile_assistant_assessment(symptoms: dict, temperature: float | None, oxyg
         action_card = "Doctor alert sent. Monitor oxygen and symptoms closely while waiting for doctor review."
     elif severity == "Medium":
         stage = "monitoring"
-        action_card = "Continue monitoring symptoms and repeat check-in if anything worsens."
+        action_card = (
+            "Continue monitoring symptoms and repeat check-in if anything worsens."
+        )
     else:
         stage = "safe_guidance"
         action_card = "Continue normal monitoring, rest, fluids, and follow your doctor's instructions."
@@ -1469,14 +1510,14 @@ def patient_login(request: PatientLoginRequest, db: Session = Depends(get_db)):
         )
 
         if not patient:
-            patient = (
-                db.query(Patient)
-                .filter(Patient.is_deleted == False)
-                .all()
-            )
+            patient = db.query(Patient).filter(Patient.is_deleted == False).all()
             patient = next((p for p in patient if _clean_email(p.email) == email), None)
 
-        if not patient or not patient.password_hash or not pwd_context.verify(password_value, patient.password_hash):
+        if (
+            not patient
+            or not patient.password_hash
+            or not pwd_context.verify(password_value, patient.password_hash)
+        ):
             return {
                 "success": False,
                 "message": "Invalid patient email or password. If you did not set a password yet, login with Patient ID first.",
@@ -1507,13 +1548,19 @@ def patient_change_password(
     db: Session = Depends(get_db),
 ):
     if request.patient_id != patient.id:
-        raise HTTPException(status_code=403, detail="Patient ID does not match your logged-in account.")
+        raise HTTPException(
+            status_code=403, detail="Patient ID does not match your logged-in account."
+        )
 
     if request.new_password != request.confirm_password:
-        raise HTTPException(status_code=400, detail="New password and confirm password do not match.")
+        raise HTTPException(
+            status_code=400, detail="New password and confirm password do not match."
+        )
 
     if len(request.new_password) < 8:
-        raise HTTPException(status_code=400, detail="Password must be at least 8 characters.")
+        raise HTTPException(
+            status_code=400, detail="Password must be at least 8 characters."
+        )
 
     patient.password_hash = pwd_context.hash(request.new_password)
     db.commit()
@@ -1522,6 +1569,7 @@ def patient_change_password(
         "success": True,
         "message": "Password updated successfully. You can now login using email and password.",
     }
+
 
 @app.get("/me")
 def patient_me(patient: Patient = Depends(_mobile_patient_from_auth)):
@@ -1607,10 +1655,17 @@ def mobile_patient_alerts(
                 "id": alert.id,
                 "severity": alert.severity or "Medium",
                 "title": _mobile_alert_title(alert.severity),
-                "message": alert.message or "Your symptoms were sent to your doctor for review.",
+                "message": alert.message
+                or "Your symptoms were sent to your doctor for review.",
                 "raw_message": alert.message,
-                "status": "Doctor reviewed" if alert.status == "Reviewed" else "Sent to doctor",
-                "next_step": _mobile_alert_next_step(alert.severity, alert.doctor_reply),
+                "status": (
+                    "Doctor reviewed"
+                    if alert.status == "Reviewed"
+                    else "Sent to doctor"
+                ),
+                "next_step": _mobile_alert_next_step(
+                    alert.severity, alert.doctor_reply
+                ),
                 "created_at": alert.created_at,
                 "is_read": bool(alert.patient_seen),
                 "case_id": None,
@@ -1633,7 +1688,9 @@ def mobile_mark_patient_alerts_read(
 ):
     alerts = (
         db.query(PatientAlert)
-        .filter(PatientAlert.patient_id == patient.id, PatientAlert.patient_seen == False)
+        .filter(
+            PatientAlert.patient_id == patient.id, PatientAlert.patient_seen == False
+        )
         .all()
     )
 
@@ -1724,22 +1781,32 @@ def mobile_symptoms_history(
     history = []
 
     for alert in alerts:
-        symptom_names = [str(s).lower().replace(" ", "_") for s in json.loads(alert.symptoms_json or "[]")]
+        symptom_names = [
+            str(s).lower().replace(" ", "_")
+            for s in json.loads(alert.symptoms_json or "[]")
+        ]
         history.append(
             {
                 "id": alert.id,
                 "patient_id": patient.id,
                 "fever": "fever" in symptom_names,
                 "cough": "cough" in symptom_names,
-                "chest_pain": "chest_pain" in symptom_names or "chest" in " ".join(symptom_names),
-                "shortness_of_breath": "shortness_of_breath" in symptom_names or "breath" in " ".join(symptom_names),
+                "chest_pain": "chest_pain" in symptom_names
+                or "chest" in " ".join(symptom_names),
+                "shortness_of_breath": "shortness_of_breath" in symptom_names
+                or "breath" in " ".join(symptom_names),
                 "fatigue": "fatigue" in symptom_names,
                 "night_sweats": "night_sweats" in symptom_names,
                 "weight_loss": "weight_loss" in symptom_names,
-                "blood_in_sputum": "blood_in_sputum" in symptom_names or "blood" in " ".join(symptom_names),
+                "blood_in_sputum": "blood_in_sputum" in symptom_names
+                or "blood" in " ".join(symptom_names),
                 "temperature": None,
                 "oxygen_level": None,
-                "trend": "Worsening" if (alert.severity or "").lower() in ["high", "critical"] else "Stable",
+                "trend": (
+                    "Worsening"
+                    if (alert.severity or "").lower() in ["high", "critical"]
+                    else "Stable"
+                ),
                 "created_at": alert.created_at,
             }
         )
@@ -1759,21 +1826,32 @@ def mobile_assistant_chat(
     db: Session = Depends(get_db),
 ):
     extracted = _extract_mobile_symptoms(request.message)
-    oxygen = request.oxygen_level if request.oxygen_level is not None else _extract_mobile_oxygen(request.message)
-    temperature = request.temperature if request.temperature is not None else _extract_mobile_temperature(request.message)
+    oxygen = (
+        request.oxygen_level
+        if request.oxygen_level is not None
+        else _extract_mobile_oxygen(request.message)
+    )
+    temperature = (
+        request.temperature
+        if request.temperature is not None
+        else _extract_mobile_temperature(request.message)
+    )
 
     symptoms = {
         "fever": request.fever or extracted["fever"],
         "cough": request.cough or extracted["cough"],
         "chest_pain": request.chest_pain or extracted["chest_pain"],
-        "shortness_of_breath": request.shortness_of_breath or extracted["shortness_of_breath"],
+        "shortness_of_breath": request.shortness_of_breath
+        or extracted["shortness_of_breath"],
         "fatigue": request.fatigue or extracted["fatigue"],
         "night_sweats": request.night_sweats or extracted["night_sweats"],
         "weight_loss": request.weight_loss or extracted["weight_loss"],
         "blood_in_sputum": request.blood_in_sputum or extracted["blood_in_sputum"],
     }
 
-    severity, trend, severity_points, red_flags, risk_reasons, stage, action_card = _mobile_assistant_assessment(symptoms, temperature, oxygen)
+    severity, trend, severity_points, red_flags, risk_reasons, stage, action_card = (
+        _mobile_assistant_assessment(symptoms, temperature, oxygen)
+    )
     symptom_names = _mobile_symptom_names(symptoms)
 
     alert = None
@@ -1805,10 +1883,14 @@ def mobile_assistant_chat(
     if temperature is None:
         follow_up_questions.append("Do you know your temperature today?")
     if not symptoms.get("blood_in_sputum"):
-        follow_up_questions.append("Is there any blood in your sputum or when coughing?")
+        follow_up_questions.append(
+            "Is there any blood in your sputum or when coughing?"
+        )
 
     return {
-        "assistant_reply": _mobile_assistant_reply(patient.full_name, severity, red_flags),
+        "assistant_reply": _mobile_assistant_reply(
+            patient.full_name, severity, red_flags
+        ),
         "severity": severity,
         "trend": trend,
         "alert_sent": alert_sent,
@@ -1835,7 +1917,9 @@ def mobile_chat_messages(
 ):
     alerts = (
         db.query(PatientAlert)
-        .filter(PatientAlert.patient_id == patient.id, PatientAlert.doctor_reply.isnot(None))
+        .filter(
+            PatientAlert.patient_id == patient.id, PatientAlert.doctor_reply.isnot(None)
+        )
         .order_by(PatientAlert.created_at.asc())
         .all()
     )
@@ -2199,6 +2283,15 @@ def predict_uploaded_image(scan_type: str = Form(...), image: UploadFile = File(
             "detected_confidence": detected_confidence,
             "scan_validation": scan_check,
             "message": f"Scan type mismatch. You selected {scan_type}, but the uploaded image appears to be {detected_type}.",
+        }
+
+    try:
+        from app.services.image_prediction import predict_image
+    except Exception as e:
+        return {
+            "success": False,
+            "error_type": "model_not_available_online",
+            "message": f"AI image model is not available on the online backend yet: {str(e)}",
         }
 
     result = predict_image(scan_type=scan_type, image_path=image_path)
