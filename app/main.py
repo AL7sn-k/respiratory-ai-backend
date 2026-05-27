@@ -19,17 +19,9 @@ from pathlib import Path
 from fastapi import UploadFile, File, Form
 # from app.services.image_prediction import predict_image
 from fastapi.responses import FileResponse
-from reportlab.lib.pagesizes import A4
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
-from reportlab.lib.styles import getSampleStyleSheet
-from reportlab.lib import colors
-from reportlab.platypus import Image as RLImage
-from reportlab.lib.units import inch
 from fastapi.responses import HTMLResponse
 from passlib.context import CryptContext
 from fastapi.responses import Response
-from playwright.sync_api import sync_playwright
-from app.services.scan_validator import validate_scan_image
 from collections import Counter
 from html import escape
 
@@ -2169,12 +2161,17 @@ def predict_uploaded_image(scan_type: str = Form(...), image: UploadFile = File(
         shutil.copyfileobj(image.file, buffer)
 
     try:
+        from app.services.scan_validator import validate_scan_image
         scan_check = validate_scan_image(image_path)
     except Exception as e:
         return {
             "success": False,
-            "error_type": "scan_validator_error",
-            "message": f"Scan validator error: {str(e)}",
+            "error_type": "model_not_available_online",
+            "message": (
+                "Online image validation/prediction is not available on this deployment yet. "
+                "Patients, appointments, alerts, replies, login, dashboard, and reports can still work. "
+                f"Details: {str(e)}"
+            ),
         }
 
     detected_type = scan_check["detected_type"]
@@ -2201,7 +2198,20 @@ def predict_uploaded_image(scan_type: str = Form(...), image: UploadFile = File(
             "message": f"Scan type mismatch. You selected {scan_type}, but the uploaded image appears to be {detected_type}.",
         }
 
-    result = predict_image(scan_type=scan_type, image_path=image_path)
+    try:
+        from app.services.image_prediction import predict_image
+        result = predict_image(scan_type=scan_type, image_path=image_path)
+    except Exception as e:
+        return {
+            "success": False,
+            "error_type": "model_not_available_online",
+            "scan_validation": scan_check,
+            "message": (
+                "Online AI image prediction is not available on this deployment yet. "
+                "This usually means TensorFlow/model files are not deployed to Railway. "
+                f"Details: {str(e)}"
+            ),
+        }
 
     result["success"] = True
     result["image_path"] = str(image_path)
@@ -2791,6 +2801,19 @@ def generate_pdf_report(
     download: bool = False,
     db: Session = Depends(get_db),
 ):
+    try:
+        from reportlab.lib.pagesizes import A4
+        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+        from reportlab.lib.styles import getSampleStyleSheet
+        from reportlab.lib import colors
+        from reportlab.platypus import Image as RLImage
+        from reportlab.lib.units import inch
+    except Exception as e:
+        return HTMLResponse(
+            content=f"<h1>PDF engine is not available on this deployment.</h1><p>{escape(str(e))}</p>",
+            status_code=503,
+        )
+
     diagnosis = db.query(Diagnosis).filter(Diagnosis.id == diagnosis_id).first()
 
     if not diagnosis:
@@ -3170,7 +3193,7 @@ def build_report_html(diagnosis: Diagnosis, patient: Patient | None):
         if not path:
             return '<div class="image-empty">No image available</div>'
         filename = Path(path).name
-        return f'<img src="http://127.0.0.1:8000/{route}/{escape(filename)}" alt="{escape(alt)}">'
+        return f'<img src="/{route}/{escape(filename)}" alt="{escape(alt)}">'
 
     def paragraph_text(value):
         clean = safe(value, "No assistant explanation saved.")
@@ -3382,6 +3405,18 @@ def preview_report(diagnosis_id: int, db: Session = Depends(get_db)):
 
 @app.get("/diagnoses/{diagnosis_id}/html-pdf")
 def download_html_pdf(diagnosis_id: int, db: Session = Depends(get_db)):
+    try:
+        from playwright.sync_api import sync_playwright
+    except Exception as e:
+        return HTMLResponse(
+            content=(
+                "<h1>HTML PDF export is not available on this online deployment.</h1>"
+                f"<p>{escape(str(e))}</p>"
+                "<p>Use the report preview or the ReportLab PDF endpoint instead.</p>"
+            ),
+            status_code=503,
+        )
+
     diagnosis = db.query(Diagnosis).filter(Diagnosis.id == diagnosis_id).first()
 
     if not diagnosis:
@@ -3393,24 +3428,34 @@ def download_html_pdf(diagnosis_id: int, db: Session = Depends(get_db)):
 
     html = build_report_html(diagnosis, patient)
 
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
-        page = browser.new_page()
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            page = browser.new_page()
 
-        page.set_content(html, wait_until="networkidle")
+            page.set_content(html, wait_until="networkidle")
 
-        pdf_bytes = page.pdf(
-            format="A4",
-            print_background=True,
-            margin={
-                "top": "6mm",
-                "right": "6mm",
-                "bottom": "6mm",
-                "left": "6mm",
-            },
+            pdf_bytes = page.pdf(
+                format="A4",
+                print_background=True,
+                margin={
+                    "top": "6mm",
+                    "right": "6mm",
+                    "bottom": "6mm",
+                    "left": "6mm",
+                },
+            )
+
+            browser.close()
+    except Exception as e:
+        return HTMLResponse(
+            content=(
+                "<h1>HTML PDF export failed on this online deployment.</h1>"
+                f"<p>{escape(str(e))}</p>"
+                "<p>This is usually because Playwright browsers are not installed on Railway.</p>"
+            ),
+            status_code=503,
         )
-
-        browser.close()
 
     return Response(
         content=pdf_bytes,
